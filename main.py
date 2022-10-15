@@ -4,6 +4,7 @@ import telethon
 from telethon.errors import SessionPasswordNeededError
 from telethon.tl.types import PeerChannel
 
+import messagejsondump
 from userinfo import UserInfo
 
 
@@ -31,20 +32,22 @@ async def main():
             raise Exception("Incorrect channel id format. Expected integer channel id")
 
     channel = await client.get_input_entity(entity)
-
     last_offset = -1
     limit = 100
-
+    allTasks = []
     while True:
         # First run
         if last_offset == -1:
-            messages = await client.get_messages(entity=channel, reversed=True)
+            messages = await client.get_messages(entity=channel, reverse=False, limit=100)
         else:
-            messages = await client.get_messages(entity=channel, reversed=True, min_id=last_offset)
-        last_offset = messages[0].id
-
-        if len(messages) > limit:
+            messages = await client.get_messages(entity=channel, reverse=False, max_id=last_offset, limit=100)
+        if messages is None or len(messages) == 0:
             break
+
+        allTasks.append(asyncio.create_task(messagejsondump.dump(messages, channel)))
+        last_offset = messages[len(messages) - 1].id
+
+    [await task for task in allTasks]
 
 if __name__ == '__main__':
     asyncio.run(main())

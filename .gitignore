@@ -130,4 +130,7 @@ dmypy.json
 
 # Pycharm files
 .idea/*
+
+# Application specific runtime files
 *.session
+^[0-9]+.messages.json
