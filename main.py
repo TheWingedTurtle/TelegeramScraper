@@ -40,7 +40,7 @@ async def main():
         if last_offset == -1:
             messages = await client.get_messages(entity=channel, reverse=False, limit=100)
         else:
-            messages = await client.get_messages(entity=channel, reverse=False, max_id=last_offset, limit=100)
+            messages = await client.get_messages(entity=channel, reverse=False, max_id=last_offset, limit=limit)
         if messages is None or len(messages) == 0:
             break
 

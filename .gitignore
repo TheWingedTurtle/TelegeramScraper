@@ -133,4 +133,4 @@ dmypy.json
 
 # Application specific runtime files
 *.session
-^[0-9]+.messages.json
+*.messages.json
