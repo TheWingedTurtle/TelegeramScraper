@@ -20,10 +20,10 @@ class UserInfo:
 
 class ChannelsInfo:
     def __init__(self):
-        self.channel_ids = cp['Telegram']['channel_ids']
-        if self.channel_ids == 'unset':
-            self.channel_ids = []
+        self.channel_ids = []
+        channels = cp['Telegram']['channel_ids']
+        if channels == 'unset':
             channels = input('Enter space separated channel ids: ')
-            for w in channels.split(''):
-                if w.isdigit():
-                    self.channel_ids.append(int(w))
+        for w in channels.split(' '):
+            if w.isdigit():
+                self.channel_ids.append(int(w))
