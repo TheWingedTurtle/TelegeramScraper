@@ -1,4 +1,5 @@
 import asyncio
+import pathlib
 import sys
 
 import telethon
@@ -25,10 +26,9 @@ async def init():
 async def main():
     user, client = await init()
     channels = ChannelsInfo()
-    channel_tasks = []
     for channel_id in channels.channel_ids:
-        channel_tasks.append(asyncio.create_task(channeltasks.async_read_new_messages(channel_id, client)))
-    [await task for task in channel_tasks]
+        asyncio.create_task(channeltasks.async_read_new_messages(channel_id, client))
+    await asyncio.wait(asyncio.all_tasks())
 
 
 if __name__ == '__main__':
@@ -37,3 +37,6 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print("Keyboard Interrupt. Exiting..")
         sys.exit(0)
+    finally:
+        for p in pathlib.Path('.').glob('*.messages.json'):
+            p.unlink(missing_ok=True)
