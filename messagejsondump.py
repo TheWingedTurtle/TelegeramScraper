@@ -2,7 +2,7 @@ import aiofiles as aiofiles
 
 
 async def dump(messages, prefix: str):
-    with open(prefix + '.' 'messages.json', 'w') as outfile:
+    with open(prefix + '.' 'messages.json', 'a') as outfile:
         for message in messages:
             if 'message' in message.to_dict():
                 outfile.write(message.to_dict()['message'])
@@ -10,6 +10,6 @@ async def dump(messages, prefix: str):
 
 
 async def dump_new_messages(message, channel_id):
-    async with aiofiles.open(str(channel_id) + '.' 'messages.json', 'w') as f:
+    async with aiofiles.open(str(channel_id) + '.' 'messages.json', 'a') as f:
         if 'message' in message.to_dict():
             await f.write(message.to_dict()['message'] + '\n')
