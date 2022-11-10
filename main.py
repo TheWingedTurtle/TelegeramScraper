@@ -2,6 +2,7 @@ import asyncio
 import sys
 from configparser import ConfigParser
 
+import aio_pika
 import aiofiles
 import telethon
 from telethon import events
@@ -11,19 +12,39 @@ from telethon.tl.types import PeerChannel
 cp = ConfigParser()
 cp.read('config.ini')
 
+mq_config = {}
+
+
+async def init_rmq():
+    mq_config['enabled'] = True
+    mq_connection = await aio_pika.connect_robust()
+    mq_connection.close_callbacks.add(mq_connection.reconnect)
+    mq_config['connection']: aio_pika.abc.AbstractRobustConnection = mq_connection
+    mq_config['routing_key'] = cp['RabbitMQ']['queue_route_key']
+    channel = await mq_connection.channel()
+    mq_config['channel']: aio_pika.abc.AbstractRobustChannel = channel
+    exchange = await channel.declare_exchange('direct', auto_delete=True, robust=True)
+    mq_config['exchange'] = exchange
+    queue = await channel.declare_queue(cp['RabbitMQ']['queue_name'], auto_delete=True, robust=True)
+    await queue.bind(exchange, cp['RabbitMQ']['queue_route_key'])
+    mq_config['queue'] = queue
+
 
 async def main():
     user, client = await init()
     channels = ChannelsInfo()
     channel_tasks = []
+    if cp['RabbitMQ']['enabled'] == 'true':
+        await init_rmq()
     for channel_id in channels.channel_ids:
         channel_tasks.append(asyncio.create_task(async_read_new_messages(channel_id, client)))
+        # channel_tasks.append(asyncio.create_task(read_multiple_channels_all_messages([channel_id], client)))
     [await task for task in channel_tasks]
 
 
 async def init():
     user = UserInfo()
-    client = telethon.TelegramClient(user.username, user.api_id, user.api_hash)
+    client = telethon.TelegramClient(user.username, int(user.api_id), user.api_hash)
     await client.start()
     if not await client.is_user_authorized():
         await client.send_code_request(user.phone)
@@ -60,6 +81,14 @@ class ChannelsInfo:
 
 
 async def dump(messages, prefix: str):
+    if mq_config['enabled']:
+        exchange: aio_pika.abc.AbstractRobustExchange = mq_config['exchange']
+        for message in messages:
+            if 'message' in message.to_dict():
+                await exchange.publish(
+                    aio_pika.Message(body=message.to_dict()['message'].encode()),
+                    mq_config['routing_key']
+                )
     with open(prefix + '.' 'messages.json', 'w') as outfile:
         for message in messages:
             if 'message' in message.to_dict():
@@ -68,15 +97,21 @@ async def dump(messages, prefix: str):
 
 
 async def dump_new_messages(message, channel_id):
-    async with aiofiles.open(str(channel_id) + '.' 'messages.json', 'w') as f:
-        if 'message' in message.to_dict():
-            await f.write(message.to_dict()['message'] + '\n')
+    if mq_config['enabled']:
+        exchange: aio_pika.abc.AbstractRobustExchange = mq_config['exchange']
+        await exchange.publish(
+            aio_pika.Message(body=message.to_dict()['message'].encode()),
+            mq_config['routing_key'])
+    else:
+        async with aiofiles.open(str(channel_id) + '.' 'messages.json', 'w') as f:
+            if 'message' in message.to_dict():
+                await f.write(message.to_dict()['message'] + '\n')
 
 
 async def async_read_new_messages(channel_id: int, client: telethon.TelegramClient):
     client.add_event_handler(lambda event: dump_new_messages(event.message, channel_id),
                              events.NewMessage(chats=channel_id))
-    print('Async task to read new messages scheduled. Messages will be dumped at ' + str(channel_id) + '.messages.json')
+    print('Async task to read new messages scheduled.')
     return await client.run_until_disconnected()
 
 
@@ -113,3 +148,7 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print("Keyboard Interrupt. Exiting..")
         sys.exit(0)
+    finally:
+        connection: aio_pika.abc.AbstractRobustConnection = mq_config['connection']
+        if not connection.is_closed:
+            asyncio.run(connection.close())
