@@ -51,37 +51,35 @@ class ChannelsInfo:
         if channels == 'unset':
             raise Exception("Please fill the details in config.ini")
         for w in channels.split(' '):
-            if w.isdigit():
-                self.channel_ids.append(int(w))
+            self.channel_ids.append(w)
 
 
-async def init_rmq(ext_loop):
+async def init_rmq(ext_loop, channel_id):
     mq_config['enabled'] = True
     mq_connection = await aio_pika.connect_robust(
         "amqp://guest:guest@127.0.0.1/", loop=ext_loop, timeout=60
     )
     mq_config['connection']: aio_pika.abc.AbstractRobustConnection = mq_connection
-    mq_config['routing_key'] = cp['RabbitMQ']['queue_route_key']
     channel = await mq_connection.channel()
     mq_config['channel']: aio_pika.abc.AbstractRobustChannel = channel
     exchange = await channel.declare_exchange('direct', auto_delete=True, robust=True)
     mq_config['exchange'] = exchange
-    queue = await channel.declare_queue(cp['RabbitMQ']['queue_name'], auto_delete=True, robust=True)
-    await queue.bind(exchange, cp['RabbitMQ']['queue_route_key'])
+    queue = await channel.declare_queue(cp['RabbitMQ']['queue_name'] + "_" + str(channel_id),
+                                        auto_delete=True, robust=True)
+    await queue.bind(exchange, str(channel_id))
     mq_config['queue'] = queue
 
 
 async def dump_new_messages(message, channel_id):
     try:
         if cp['RabbitMQ']['enabled']:
-            await init_rmq(asyncio.get_running_loop())
+            await init_rmq(asyncio.get_running_loop(), channel_id)
             exchange: aio_pika.abc.AbstractRobustExchange = mq_config['exchange']
             if 'message' in message.to_dict():
                 message_body = message.to_dict()['message']
                 logging.info("Sending message: " + str(message_body))
                 await exchange.publish(
-                    aio_pika.Message(body=message_body.encode()),
-                    mq_config['routing_key'])
+                    aio_pika.Message(body=message_body.encode()), str(channel_id))
         else:
             async with aiofiles.open(str(channel_id) + '.' 'messages.json', 'w') as f:
                 if 'message' in message.to_dict():
@@ -92,11 +90,47 @@ async def dump_new_messages(message, channel_id):
         await mq_config['connection'].close()
 
 
-async def async_read_new_messages(channel_id: int, client: telethon.TelegramClient):
+async def async_read_new_messages(channel_id: str, client: telethon.TelegramClient):
+    chat_id = channel_id
+    if not channel_id.isnumeric():
+        entity = await client.get_entity(channel_id)
+        chat_id = int(entity.id)
     client.add_event_handler(lambda event: dump_new_messages(event.message, channel_id),
-                             events.NewMessage(chats=channel_id))
+                             events.NewMessage(chats=chat_id))
     logging.info('Async task to read new messages scheduled.')
     return await client.run_until_disconnected()
+
+
+async def read_all_channel_messages(channel: str, client: telethon.TelegramClient):
+    last_offset = -1
+    limit = 100
+    try:
+        if channel.isnumeric():
+            entity = None
+            async for d in client.iter_dialogs(offset_id=int(channel)):
+                if int(d.entity.id) == int(channel):
+                    entity = d.entity
+                    break
+            if entity is None:
+                raise ValueError
+        else:
+            entity = await client.get_entity(channel)
+    except ValueError:
+        logging.info("No entity found for " + channel)
+        return
+
+    while True:
+        # First run
+        if last_offset == -1:
+            messages = await client.get_messages(entity=entity, reverse=False, limit=100)
+        else:
+            messages = await client.get_messages(entity=entity, reverse=False, max_id=last_offset, limit=limit)
+
+        if messages is None or len(messages) == 0:
+            break
+
+        print(messages)
+        last_offset = messages[len(messages) - 1].id
 
 
 async def main():

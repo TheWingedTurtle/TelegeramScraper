@@ -17,12 +17,14 @@ async def main(loop):
     )
 
     async with connection:
-        queue_name = cp['RabbitMQ']['queue_name']
+        channels = cp['Telegram']['channel_ids']
+        for channel in channels:
+            queue_name = cp['RabbitMQ']['queue_name'] + "_" + str(channel)
 
-        # Creating channel
-        channel: aio_pika.abc.AbstractChannel = await connection.channel()
-        queue = await channel.declare_queue(queue_name, auto_delete=True)
-        await queue.consume(callback=println)
+            # Creating channel
+            channel: aio_pika.abc.AbstractChannel = await connection.channel()
+            queue = await channel.declare_queue(queue_name, auto_delete=True)
+            await queue.consume(callback=println)
 
 
 def println(message: aio_pika.abc.AbstractIncomingMessage):
