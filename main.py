@@ -57,7 +57,7 @@ class ChannelsInfo:
 async def init_rmq(ext_loop, channel_id):
     mq_config['enabled'] = True
     mq_connection = await aio_pika.connect_robust(
-        "amqp://guest:guest@127.0.0.1/", loop=ext_loop, timeout=60
+        "amqp://guest:guest@127.0.0.1/", loop=ext_loop
     )
     mq_config['connection']: aio_pika.abc.AbstractRobustConnection = mq_connection
     channel = await mq_connection.channel()
@@ -86,17 +86,15 @@ async def dump_new_messages(message, channel_id):
                     await f.write(message.to_dict()['message'] + '\n')
     except Exception as e:
         logging.info("Exception occurred:" + str(e))
-    finally:
-        await mq_config['connection'].close()
 
 
 async def async_read_new_messages(channel_id: str, client: telethon.TelegramClient):
     chat_id = channel_id
     if not channel_id.isnumeric():
         entity = await client.get_entity(channel_id)
-        chat_id = int(entity.id)
+        chat_id = entity.id
     client.add_event_handler(lambda event: dump_new_messages(event.message, channel_id),
-                             events.NewMessage(chats=chat_id))
+                             events.NewMessage(chats=int(chat_id)))
     logging.info('Async task to read new messages scheduled.')
     return await client.run_until_disconnected()
 
