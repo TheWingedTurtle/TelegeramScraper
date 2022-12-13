@@ -77,6 +77,7 @@ async def dump_new_messages(message, channel_id):
             exchange: aio_pika.abc.AbstractRobustExchange = mq_config['exchange']
             if 'message' in message.to_dict():
                 message_body = message.to_dict()['message']
+                logging.info("---------channel id: [{}]---------".format(channel_id))
                 logging.info("Sending message: " + str(message_body))
                 await exchange.publish(
                     aio_pika.Message(body=message_body.encode()), str(channel_id))
